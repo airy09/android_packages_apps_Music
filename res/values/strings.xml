@@ -411,6 +411,14 @@
     <string name="button_done">Done</string>
     <string name="button_cancel">Cancel</string>
 
+    <!-- Folder playlist. -->
+    <string name="favoritefolder">Favorite folder</string>
+    <string name="edit_favorite_folder_menu">Set folder</string>
+    <string name="refresh_favorite_folder_menu">Refresh media</string>
+    <string name="favoritefolder_title">Favorite folder</string>
+    <string name="folderpicker_title">Set favorite folder</string>
+    <string name="folderpicker_set">Done</string>
+
     <string name="widget_category_title">Widget</string>
 
     <string name="widget_transparency_title">Transparency</string>
@@ -443,6 +451,10 @@
         <item>90</item>
         <item>100</item>
     </string-array>
+
+    <string name="various_category_title">Various</string>
+    <string name="a2dp_autoplay_title">A2DP autoplay</string>
+    <string name="a2dp_autoplay_summary">Start playback automatically when a bluetooth A2DP device is connected</string>
 
 </resources>
 
