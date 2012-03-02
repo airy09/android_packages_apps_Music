@@ -57,11 +57,13 @@ import java.lang.ref.WeakReference;
 import java.util.Random;
 import java.util.Vector;
 
+import android.provider.Settings;
+
 /**
  * Provides "background" audio playback capabilities, allowing the
  * user to switch between activities without stopping playback.
  */
-public class MediaPlaybackService extends Service {
+public class MediaPlaybackService extends Service implements AccelerometerListener.OrientationListener {
     /** used to specify whether enqueue() should start playing
      * the new list of files right away, next or once all the currently
      * queued files have been played
@@ -114,6 +116,11 @@ public class MediaPlaybackService extends Service {
     
     private MultiPlayer mPlayer;
     private String mFileToPlay;
+    private int mOrientation = AccelerometerListener.ORIENTATION_UNKNOWN;
+    private int mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+    private AccelerometerListener mAccelerometerListener;
+    private boolean mFlipPause = false;
+    private boolean mFlipPlay = false;
     private int mShuffleMode = SHUFFLE_NONE;
     private int mRepeatMode = REPEAT_NONE;
     private int mMediaMountedCount = 0;
@@ -208,6 +215,7 @@ public class MediaPlaybackService extends Service {
                     if (mRepeatMode == REPEAT_CURRENT) {
                         seek(0);
                         play();
+                        mFlipPause = false;
                     } else {
                         next(false);
                     }
@@ -226,6 +234,8 @@ public class MediaPlaybackService extends Service {
                                 mPausedByTransientLossOfFocus = false;
                             }
                             pause();
+                            mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                            mFlipPlay=false;
                             break;
                         case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                             mMediaplayerHandler.removeMessages(FADEUP);
@@ -248,6 +258,8 @@ public class MediaPlaybackService extends Service {
                                 } else {
                                     mPausedByTransientLossOfFocus = true;
                                     pause(); // don't move pause out because we have ducking
+                                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                                    mFlipPlay=false;
                                 }
                             }
                             break;
@@ -258,6 +270,7 @@ public class MediaPlaybackService extends Service {
                                 mCurrentVolume = 0f;
                                 mPlayer.setVolume(mCurrentVolume);
                                 play(); // also queues a fade-in
+                                mFlipPause = false;
                             } else {
                                 mMediaplayerHandler.removeMessages(FADEDOWN);
                                 mMediaplayerHandler.sendEmptyMessage(FADEUP);
@@ -287,17 +300,25 @@ public class MediaPlaybackService extends Service {
             } else if (CMDTOGGLEPAUSE.equals(cmd) || TOGGLEPAUSE_ACTION.equals(action)) {
                 if (isPlaying()) {
                     pause();
+                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                    mFlipPlay=false;
                     mPausedByTransientLossOfFocus = false;
                 } else {
                     play();
+                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+                    mFlipPause = false;
                 }
             } else if (CMDPAUSE.equals(cmd) || PAUSE_ACTION.equals(action)) {
                 pause();
                 mPausedByTransientLossOfFocus = false;
+                mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                mFlipPlay=false;
             } else if (CMDSTOP.equals(cmd)) {
                 pause();
                 mPausedByTransientLossOfFocus = false;
                 seek(0);
+                mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                mFlipPlay=false;
             } else if (CMDCYCLEREPEAT.equals(cmd) || CYCLEREPEAT_ACTION.equals(action)) {
                 cycleRepeat();
             } else if (CMDTOGGLESHUFFLE.equals(cmd) || TOGGLESHUFFLE_ACTION.equals(action)) {
@@ -330,6 +351,8 @@ public class MediaPlaybackService extends Service {
                     if (isPlaying()) {
                         mPausedByTransientLossOfFocus = true;
                         pause();
+                        mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                        mFlipPlay=false;
                     }
                     break;
 
@@ -338,6 +361,8 @@ public class MediaPlaybackService extends Service {
                     mPausedByTransientLossOfFocus = false;
                     if (isPlaying()) {
                         pause();
+                        mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                        mFlipPlay=false;
                     }
                     break;
             }
@@ -360,6 +385,8 @@ public class MediaPlaybackService extends Service {
 
         registerExternalStorageListener();
         registerA2dpServiceListener();
+        
+        mAccelerometerListener = new AccelerometerListener(this, this);
 
         // Needs to be done in this thread, since otherwise ApplicationContext.getPowerManager() crashes.
         mPlayer = new MultiPlayer();
@@ -679,21 +706,30 @@ public class MediaPlaybackService extends Service {
                 } else {
                     seek(0);
                     play();
+                    mFlipPause = false;
                 }
             } else if (CMDTOGGLEPAUSE.equals(cmd) || TOGGLEPAUSE_ACTION.equals(action)) {
                 if (isPlaying()) {
                     pause();
+                    mFlipPlay = false;
+                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
                     mPausedByTransientLossOfFocus = false;
                 } else {
                     play();
+                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+                    mFlipPause = false;
                 }
             } else if (CMDPAUSE.equals(cmd) || PAUSE_ACTION.equals(action)) {
                 pause();
                 mPausedByTransientLossOfFocus = false;
+                mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                mFlipPlay=false;
             } else if (CMDSTOP.equals(cmd)) {
                 pause();
                 mPausedByTransientLossOfFocus = false;
                 seek(0);
+                mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                mFlipPlay=false;
             } else if (CMDCYCLEREPEAT.equals(cmd) || CYCLEREPEAT_ACTION.equals(action)) {
                 cycleRepeat();
             } else if (CMDTOGGLESHUFFLE.equals(cmd) || TOGGLESHUFFLE_ACTION.equals(action)) {
@@ -932,6 +968,12 @@ public class MediaPlaybackService extends Service {
                     mPlayPos = mPlayListLen - list.length;
                     openCurrent();
                     play();
+                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+                    mFlipPause = false;
+                    if (!mAccelerometerListener.isEnabled()) {
+		    	// option enabled?
+			 mAccelerometerListener.enable(true);
+	    	    }
                     notifyChange(META_CHANGED);
                     return;
                 }
@@ -940,6 +982,11 @@ public class MediaPlaybackService extends Service {
                 mPlayPos = 0;
                 openCurrent();
                 play();
+                mFlipPause = false;
+                if (!mAccelerometerListener.isEnabled()) {
+		    // option enabled?
+	            mAccelerometerListener.enable(true);
+	    	}
                 notifyChange(META_CHANGED);
             }
         }
@@ -1159,6 +1206,10 @@ public class MediaPlaybackService extends Service {
 
         telephonyManager.listen(mPhoneStateListener, PhoneStateListener.LISTEN_CALL_STATE);
 
+        if (mAccelerometerListener != null) {
+            mAccelerometerListener.enable(true);
+        }
+
         if (mPlayer.isInitialized()) {
             // if we are at the end of the song, go to the next song first
             long duration = mPlayer.duration();
@@ -1313,6 +1364,8 @@ public class MediaPlaybackService extends Service {
             stop(false);
             openCurrent();
             play();
+            mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+            mFlipPause = false;
             notifyChange(META_CHANGED);
         }
     }
@@ -1408,6 +1461,8 @@ public class MediaPlaybackService extends Service {
             stop(false);
             openCurrent();
             play();
+            mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+            mFlipPause = false;
             notifyChange(META_CHANGED);
         }
     }
@@ -1629,6 +1684,8 @@ public class MediaPlaybackService extends Service {
                     openCurrent();
                     if (wasPlaying) {
                         play();
+                        mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+                        mFlipPause = false;
                     }
                 }
                 notifyChange(META_CHANGED);
@@ -1673,6 +1730,8 @@ public class MediaPlaybackService extends Service {
                     mPlayPos = 0;
                     openCurrent();
                     play();
+                    mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+                    mFlipPause = false;
                     notifyChange(META_CHANGED);
                     return;
                 } else {
@@ -1745,6 +1804,8 @@ public class MediaPlaybackService extends Service {
             mPlayPos = pos;
             openCurrent();
             play();
+            mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+            mFlipPause = false;
             notifyChange(META_CHANGED);
             if (mShuffleMode == SHUFFLE_AUTO) {
                 doAutoShuffleUpdate();
@@ -1877,6 +1938,33 @@ public class MediaPlaybackService extends Service {
         synchronized (this) {
             mPlayer.setAudioSessionId(sessionId);
         }
+    }
+
+    public void orientationChanged(int orientation) {
+        mOrientation = orientation;
+
+        // are we being flipped down?
+       	if (orientation == AccelerometerListener.ORIENTATION_FLIPDOWN) {
+	        if ((mLastOrientation != AccelerometerListener.ORIENTATION_FLIPDOWN) && (!mFlipPause)) {
+				if (isPlaying()) {
+                                      pause();
+                                      mLastOrientation = AccelerometerListener.ORIENTATION_FLIPUP;
+                                      mPausedByTransientLossOfFocus = false;
+				      mFlipPause = true;
+                                      mFlipPlay = false;
+                                }       
+	        } 
+
+        } else if (orientation == AccelerometerListener.ORIENTATION_FLIPUP) {
+	        if ((mLastOrientation != AccelerometerListener.ORIENTATION_FLIPUP) && (!mFlipPlay)) {
+                                      play();
+                                      mLastOrientation = AccelerometerListener.ORIENTATION_FLIPDOWN;
+                                      mPausedByTransientLossOfFocus = false;
+				      mFlipPlay = true;
+                                      mFlipPause = false;
+                }     
+        }
+        mLastOrientation = orientation;
     }
 
     /**
